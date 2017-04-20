@@ -1,7 +1,7 @@
 <html>
 <head>
 <title>My first chart using FusionCharts Suite XT</title>
-<script type="text/javascript" src="http://static.fusioncharts.com/code/latest/fusioncharts.js"></script>
+<script type="text/javascript" src="/fusioncharts.js"></script>
 <script type="text/javascript" src="http://static.fusioncharts.com/code/latest/themes/fusioncharts.theme.fint.js?cacheBust=56"></script>
 <script type="text/javascript">
   FusionCharts.ready(function(){
@@ -20,6 +20,8 @@
             "numberPrefix": "$",
             "theme": "fint",
             "exportEnabled": "1",
+            "exportAtClient": "0",
+            "exportHandler": "x.com",
             "LabelPadding": "50"
         },
         "annotations": {
