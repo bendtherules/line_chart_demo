@@ -39692,15 +39692,17 @@ FusionCharts.register('module', ['private', 'modules.exporter.main',
                         canvas = doc.createElement('canvas');
                         canvas.width = paper.width;
                         canvas.height = paper.height;
-                        if (exportFormat === 'svg') {
-                            getSvgDataurl(svgForClientSideExport, function (dataUri) {
-                                sendPost(dataUri);
-                            });
-                        } else if (crossDomainImageFlag) {
+
+                        if (crossDomainImageFlag) {
                             getSVGRawInternalImagesProcessed(svg,
                                 function (svg) {
                                     sendPost(svg,crossDomainImageFlag);
                                 })
+                        } else if (exportFormat === 'svg') {
+                            getSvgDataurl(svgForClientSideExport, function (dataUri) {
+                                sendPost(dataUri);
+                            });
+
                         } else {
                             lib.drawSvgOnCanvas(svgForClientSideExport, canvas, 0, 0, paper.width,
                                     paper.height, function () {
