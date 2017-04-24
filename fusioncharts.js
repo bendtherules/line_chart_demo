@@ -39555,7 +39555,7 @@ FusionCharts.register('module', ['private', 'modules.exporter.main',
                     // If the hosted environment supports canvas get SVG with image tags
                     // else trim all embedded image specific tags.
                     // @todo: Need to figure out how images could be exported for older browsers.
-                    svg = paper.toSVG(exportwithimages && isCanvasSupported && exportFormat !== 'svg');
+                    svg = paper.toSVG(exportwithimages && isCanvasSupported);
 
                     svgForClientSideExport = paper.toSVG(exportwithimages && isCanvasSupported);
                     svgForClientSideExport = removeCrossDomainImages(svgForClientSideExport);
