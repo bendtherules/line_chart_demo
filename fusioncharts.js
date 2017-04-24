@@ -15776,11 +15776,16 @@ FusionCharts.register('module', ['private', 'modules.renderer.js-lib', function 
             return {'name' : 'default', 'version' : 'Not Known'};
         },
 
-        removeCrossDomainImages = function(svgStr) {
+        removeCrossDomainImages = function(svgStr,replaceEmpty) {
+            // never use it i.e. remove CORS images when you can pass it on to export server.
+            if (replaceEmpty === undefined) {
+                replaceEmpty = true;
+            }
+
             var imgArr;
 
             imgArr = svgStr.replace(/<image [^\>]*\>/gi, function(matchStr) {
-                if (matchStr.match(/href=["']\s*["']/)) {
+                if (replaceEmpty && matchStr.match(/href=["']\s*["']/)) {
                     return '';
                 }
                 if(matchStr.match(/href=["']http:\/\/|href=["']https:\/\//)) {
@@ -15795,6 +15800,27 @@ FusionCharts.register('module', ['private', 'modules.renderer.js-lib', function 
             });
             return imgArr;
         },
+
+        hasCrossDomainImage = function (svgStr) {
+          return (svgStr != removeCrossDomainImages(svgStr, true));
+        },
+
+        parseUrl = function(href) {
+            var l = document.createElement("a");
+            l.href = href;
+            return l;
+        },
+
+        isSameDomainUrl = function (url1,url2) {
+            url1 = parseUrl(url1);
+            url2 = parseUrl(url2);
+            return (url1.host == url2.host);
+        },
+
+        isCrossDomainUrl = function (url1) {
+            return (!isSameDomainUrl(url1,win.location));
+        },
+
 
         /*
         * method makeClientSideDownload is used to make the file downloadable
@@ -16019,7 +16045,7 @@ FusionCharts.register('module', ['private', 'modules.renderer.js-lib', function 
 
         /*
         * method processInternalImages is used to convert the inline images to dataurl
-        * @variable svgStr {string} the svg string whose inline images to be converted
+        * @variable svgStr {string} the svg string whose inline images (if not CORS) to be converted
         * @variable callback {string} method to be called after succesfully conversion
          */
         processInternalImages = function(svgStr, callback) {
@@ -16030,7 +16056,7 @@ FusionCharts.register('module', ['private', 'modules.renderer.js-lib', function 
 
 
             svgStr = svgStr.replace(/NS\d+:/gi, 'xlink:');
-            svgStr = removeCrossDomainImages(svgStr);
+            // svgStr = removeCrossDomainImages(svgStr);
             // if there is no images pass the svg to the callback and return.
             if(svgStr.indexOf('<image ') === -1) {
                 callback(svgStr);
@@ -16038,32 +16064,47 @@ FusionCharts.register('module', ['private', 'modules.renderer.js-lib', function 
             }
             noOfImages = svgStr.match(/<image [^\>]*\>/gi).length;
             svgStr = svgStr.replace(/<image [^\>]*\>/gi, function(matchStr) {
+                var crossDomainImageFlag = false;
+
                 matchStr = matchStr.replace(/(:href=")([^"]*)(")/gi, function(matchSubStr, p1, p2, p3) {
                     imageName = p2;
-                    return p1+'{{{'+i+'}}}'+p3;
+                    if (isCrossDomainUrl(imageName)) {
+                        // if CORS image, dont try to replace it, let it go
+                        // and act as if image was successfully loaded by increasing counter
+                        crossDomainImageFlag = true;
+                        noOfImagesLoaded++;
+                        return matchSubStr;
+                    }
+                    else {
+                        return p1+'{{{'+i+'}}}'+p3;
+                    }
 
                 });
-                var canvas = doc.createElement('canvas'),
-                    ctx,
-                    img;
-                ctx = canvas.getContext('2d');
-                img = new Image();
-                img.src = imageName;
-                img.ind = i;
-                img.onload = function() {
-                    canvas.width = this.width;
-                    canvas.height = this.height;
-                    ctx.drawImage(this, 0, 0);
-                    var imageUri = canvas.toDataURL('image/png'),
-                    re;
-                    new Image().src = imageUri;
-                    re = new RegExp('\\{\\{\\{'+img.ind+'\\}\\}\\}', 'g');
-                    svgStr = svgStr.replace(re, imageUri);
-                    noOfImagesLoaded++;
-                    if(noOfImages === noOfImagesLoaded) {
-                        callback(svgStr);
-                    }
-                };
+                if (!crossDomainImageFlag) {
+                    var canvas = doc.createElement('canvas'),
+                        ctx,
+                        img;
+                    ctx = canvas.getContext('2d');
+                    img = new Image();
+                    img.src = imageName;
+                    img.ind = i;
+                    // currently if any of the image download fails, export fails as callback
+                    // is not called ever. We should also listen to onerror of image laod
+                    img.onload = function() {
+                        canvas.width = this.width;
+                        canvas.height = this.height;
+                        ctx.drawImage(this, 0, 0);
+                        var imageUri = canvas.toDataURL('image/png'),
+                        re;
+                        new Image().src = imageUri;
+                        re = new RegExp('\\{\\{\\{'+img.ind+'\\}\\}\\}', 'g');
+                        svgStr = svgStr.replace(re, imageUri);
+                        noOfImagesLoaded++;
+                        if(noOfImages === noOfImagesLoaded) {
+                            callback(svgStr);
+                        }
+                    };
+                }
                 i++;
                 return matchStr;
             });
@@ -16083,6 +16124,12 @@ FusionCharts.register('module', ['private', 'modules.renderer.js-lib', function 
                 var finalSvgStr = doctype + svgStr;
                 callback('data:image/svg+xml;base64,' +
                     win.btoa(win.unescape(encodeURIComponent(finalSvgStr))));
+            });
+        },
+
+        getSVGRawInternalImagesProcessed = function (svg,callback) {
+            processInternalImages(svg, function(svgStr) {
+                callback(svgStr);
             });
         },
 
@@ -16994,7 +17041,11 @@ FusionCharts.register('module', ['private', 'modules.renderer.js-lib', function 
         componentDispose : componentDispose,
         componentConfigurer: componentConfigurer,
         getSvgDataurl : getSvgDataurl,
+        getSVGRawInternalImagesProcessed : getSVGRawInternalImagesProcessed,
         removeCrossDomainImages : removeCrossDomainImages,
+        hasCrossDomainImage : hasCrossDomainImage,
+        isSameDomainUrl : isSameDomainUrl,
+        isCrossDomainUrl : isCrossDomainUrl,
         getBrowserDetails : getBrowserDetails,
         dataurlToBlob : dataurlToBlob,
         downloadCharts : downloadCharts,
@@ -39393,7 +39444,9 @@ FusionCharts.register('module', ['private', 'modules.exporter.main',
                 chartComponents = iapi.components,
                 chartInstance = iapi.chartInstance,
                 getSvgDataurl = lib.getSvgDataurl,
+                getSVGRawInternalImagesProcessed = lib.getSVGRawInternalImagesProcessed,
                 removeCrossDomainImages = lib.removeCrossDomainImages,
+                hasCrossDomainImage = lib.hasCrossDomainImage,
                 downloadCharts = lib.downloadCharts,
                 options = chartConfig.exportOption,
                 exportOptions_lowerKeys = isObject(exportOption) && (function (object) { // jshint ignore:line
@@ -39505,6 +39558,7 @@ FusionCharts.register('module', ['private', 'modules.exporter.main',
                     svg = paper.toSVG(exportwithimages && isCanvasSupported && exportFormat !== 'svg');
 
                     svgForClientSideExport = paper.toSVG(exportwithimages && isCanvasSupported);
+                    svgForClientSideExport = removeCrossDomainImages(svgForClientSideExport);
 
                     // show the buttons layer after export
                     chartComponents.chartMenuBar && chartComponents.chartMenuBar.group.attr('visibility', 'visible');
@@ -39515,7 +39569,7 @@ FusionCharts.register('module', ['private', 'modules.exporter.main',
                     svg = svg.replace(/NS\d+:/gi, 'xlink:');
 
                     // Remove cross domain Images
-                    svg = removeCrossDomainImages(svg);
+                    // svg = removeCrossDomainImages(svg);
 
                     svgForClientSideExport = svgForClientSideExport.replace(/NS\d+:/gi, 'xlink:');
                     svgForClientSideExport = svgForClientSideExport.replace(/(\sd\s*=\s*["'])[M\s\d\.]*(["'])/ig,
@@ -39614,9 +39668,23 @@ FusionCharts.register('module', ['private', 'modules.exporter.main',
                     var canvas,
                         sendPost,
                         pdfDoc;
-                    sendPost = function (dataUri) {
+                    var crossDomainImageFlag = hasCrossDomainImage(svg);
+                    sendPost = function (dataUri, crossDomainImageFlag) {
+                        if (crossDomainImageFlag === undefined)
+                        {
+                            crossDomainImageFlag = false;
+                        }
+
+                        if (!crossDomainImageFlag)
+                        {
+                            postData.stream_type = 'IMAGE-DATA'; // jshint ignore:line
+                        }
+                        else
+                        {
+                            postData.stream_type = SVG; // jshint ignore:line
+                        }
+
                         postData.stream = dataUri;
-                        postData.stream_type = 'IMAGE-DATA'; // jshint ignore:line
                         downloadCharts(null, null, null, postData, exportOptionObject);
                     };
                     // Check whether embedded images exists in the SVG String
@@ -39628,6 +39696,11 @@ FusionCharts.register('module', ['private', 'modules.exporter.main',
                             getSvgDataurl(svgForClientSideExport, function (dataUri) {
                                 sendPost(dataUri);
                             });
+                        } else if (crossDomainImageFlag) {
+                            getSVGRawInternalImagesProcessed(svg,
+                                function (svg) {
+                                    sendPost(svg,crossDomainImageFlag);
+                                })
                         } else {
                             lib.drawSvgOnCanvas(svgForClientSideExport, canvas, 0, 0, paper.width,
                                     paper.height, function () {
